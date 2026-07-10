@@ -815,15 +815,6 @@ export class RecipeService {
         changed = true;
       }
 
-      existing = existing.map(r => {
-        const sample = sampleMap.get(r.id);
-        if (sample && r.image !== sample.image) {
-          changed = true;
-          return { ...r, image: sample.image };
-        }
-        return r;
-      });
-
       if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
       return existing;
     }

@@ -1,6 +1,10 @@
 import { Component, Input, Output, EventEmitter, inject } from '@angular/core';
 import { FormBuilder, FormArray, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Recipe } from '../../models/recipe.model';
+import { Recipe, MealType, MEAL_TYPES } from '../../models/recipe.model';
+
+const MEAL_LABELS: Record<MealType, string> = {
+  breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snacks: 'Snacks',
+};
 
 @Component({
   selector: 'app-add-recipe',
@@ -24,6 +28,21 @@ import { Recipe } from '../../models/recipe.model';
               <label>Recipe Name *</label>
               <input formControlName="name" placeholder="e.g. Spaghetti Carbonara" />
             </div>
+
+            <div class="field full">
+              <label>Meal Category</label>
+              <div class="meal-pills">
+                @for (mt of MEAL_TYPES; track mt) {
+                  <button
+                    type="button"
+                    class="meal-pill"
+                    [class.active]="form.get('mealType')?.value === mt"
+                    (click)="toggleMealType(mt)"
+                  >{{ MEAL_LABELS[mt] }}</button>
+                }
+              </div>
+            </div>
+
             <div class="field full">
               <label>Image URL</label>
               <input formControlName="image" placeholder="https://example.com/image.jpg" />
@@ -42,12 +61,12 @@ import { Recipe } from '../../models/recipe.model';
             </div>
             <div class="field">
               <label>Tags (comma-separated)</label>
-              <input formControlName="tags" placeholder="dinner, healthy" />
+              <input formControlName="tags" placeholder="healthy, quick" />
             </div>
           </div>
 
           <div class="section-header">
-            <label class="section-label">Ingredients *</label>
+            <label class="section-label">Ingredients</label>
             <button type="button" class="add-btn-small" (click)="addIngredient()">+ Add</button>
           </div>
           <div formArrayName="ingredients" class="ingredients-list">
@@ -120,6 +139,14 @@ import { Recipe } from '../../models/recipe.model';
     }
     input:focus, textarea:focus { border-color: #2d7d46; }
     textarea { resize: vertical; }
+    .meal-pills { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .meal-pill {
+      padding: 6px 18px; border-radius: 20px; border: 1.5px solid #e0ece3;
+      background: #fff; color: #555; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; transition: all 0.15s; font-family: inherit;
+    }
+    .meal-pill:hover { border-color: #2d7d46; color: #2d7d46; }
+    .meal-pill.active { background: #2d7d46; border-color: #2d7d46; color: #fff; }
     .section-header {
       display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem;
     }
@@ -155,6 +182,9 @@ import { Recipe } from '../../models/recipe.model';
   `]
 })
 export class AddRecipeComponent {
+  readonly MEAL_TYPES = MEAL_TYPES;
+  readonly MEAL_LABELS = MEAL_LABELS;
+
   @Output() close = new EventEmitter<void>();
   @Output() save = new EventEmitter<Omit<Recipe, 'id' | 'createdAt'>>();
   @Output() update = new EventEmitter<Recipe>();
@@ -164,20 +194,23 @@ export class AddRecipeComponent {
   @Input() set editRecipe(recipe: Recipe | null | undefined) {
     if (!recipe) return;
     this.editId = recipe.id;
+    const mealType = recipe.tags.find(t => (MEAL_TYPES as string[]).includes(t)) ?? '';
+    const otherTags = recipe.tags.filter(t => !(MEAL_TYPES as string[]).includes(t));
     this.form.patchValue({
       name: recipe.name,
       image: recipe.image,
       cookingTime: recipe.cookingTime,
       calories: recipe.calories,
       servings: recipe.servings,
-      tags: recipe.tags.join(', '),
+      mealType,
+      tags: otherTags.join(', '),
       instructions: recipe.instructions,
     });
     while (this.ingredients.length > 0) this.ingredients.removeAt(0);
     for (const ing of recipe.ingredients) {
       this.ingredients.push(this.fb.group({
-        name: [ing.name, Validators.required],
-        amount: [ing.amount, Validators.required],
+        name: [ing.name],
+        amount: [ing.amount],
         unit: [ing.unit],
       }));
     }
@@ -191,6 +224,7 @@ export class AddRecipeComponent {
     cookingTime: [30, [Validators.required, Validators.min(1)]],
     calories: [400, [Validators.required, Validators.min(0)]],
     servings: [2, [Validators.required, Validators.min(1)]],
+    mealType: [''],
     tags: [''],
     instructions: ['', Validators.required],
     ingredients: this.fb.array([this.createIngredient()]),
@@ -200,12 +234,13 @@ export class AddRecipeComponent {
     return this.form.get('ingredients') as FormArray;
   }
 
+  toggleMealType(mt: MealType) {
+    const current = this.form.get('mealType')?.value;
+    this.form.patchValue({ mealType: current === mt ? '' : mt });
+  }
+
   createIngredient() {
-    return this.fb.group({
-      name: ['', Validators.required],
-      amount: ['', Validators.required],
-      unit: [''],
-    });
+    return this.fb.group({ name: [''], amount: [''], unit: [''] });
   }
 
   addIngredient() {
@@ -219,19 +254,21 @@ export class AddRecipeComponent {
   submit() {
     if (this.form.invalid) return;
     const v = this.form.value;
+    const mealType = v.mealType?.trim();
+    const otherTags = v.tags
+      ? v.tags.split(',').map((t: string) => t.trim()).filter((t: string) => t && !(MEAL_TYPES as string[]).includes(t))
+      : [];
     const data: Omit<Recipe, 'id' | 'createdAt'> = {
       name: v.name!,
       image: v.image || 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=600&q=80',
       cookingTime: v.cookingTime!,
       calories: v.calories!,
       servings: v.servings!,
-      tags: v.tags ? v.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+      tags: [...(mealType ? [mealType] : []), ...otherTags],
       instructions: v.instructions!,
-      ingredients: (v.ingredients as any[]).map(i => ({
-        name: i.name,
-        amount: i.amount,
-        unit: i.unit || '',
-      })),
+      ingredients: (v.ingredients as any[])
+        .filter(i => i.name?.trim())
+        .map(i => ({ name: i.name, amount: i.amount || '', unit: i.unit || '' })),
     };
     if (this.editId) {
       this.update.emit({ ...data, id: this.editId, createdAt: '' });
